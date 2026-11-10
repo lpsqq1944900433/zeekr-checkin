@@ -1,0 +1,26 @@
+services:
+  qinglong:
+    image: qinglong:latest
+    pull_policy: never
+    container_name: qinglong
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5700:5700"
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - type: bind
+        source: ./docker/qinglong/data
+        target: /ql/data
+      - type: bind
+        source: ./qinglong
+        target: /zeekr/entries
+        read_only: true
+      - type: bind
+        source: ./configs
+        target: /zeekr/configs
+        read_only: true
+      - type: bind
+        source: ./docker/qinglong/scripts
+        target: /ql/data/scripts/zeekr-local
+        read_only: true
