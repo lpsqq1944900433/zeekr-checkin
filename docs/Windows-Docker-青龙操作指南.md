@@ -9,6 +9,7 @@
 - 调度时区：`Asia/Shanghai`，即北京时间。
 - 登录账号为 `admin`，随机生成的密码保存在项目的 `docker/qinglong/data/panel-login.txt`，没有写入本文或 Git。
 - 六条任务已启用，使用当前本地 `qinglong/` 中的脚本，不需要安装 npm 依赖。
+- 已启用青龙原生随机启动延迟：定时触发后随机等待 **1～30 秒**；配置项见第 5 节。
 - Token 的唯一来源是原文件 `configs/极氪本人token.txt`。每次运行重新读取，不需要在面板「环境变量」中再复制一份。
 
 首次实测于 **2026-11-10 22:48（北京时间）**：Token 鉴权成功、今日已签到、上报 22223 步成功；阅读文章和每周点赞已完成；查询时没有待领取奖励。减碳任务仍显示待完成，不能据此声称所有 App 任务都已完成。
@@ -85,7 +86,7 @@ notepad .\docker\qinglong\data\panel-login.txt
 | 晚间场，完整流程 | 21:30 | `30 21 * * *` | `zeekr_2130_all.js` |
 | 晚间补领 | 21:40 | `40 21 * * *` | `zeekr_2140_claim.js` |
 
-cron 的五列依次是「分、时、日、月、星期」。例如 `30 21 * * *` 表示每天 21:30。
+cron 的五列依次是「分、时、日、月、星期」。例如 `30 21 * * *` 表示每天 21:30 触发；启用随机延迟后，任务再随机等待 1～30 秒开始运行。调度和系统负载也可能带来额外耗时。
 
 面板里的命令以晚间场为例：
 
@@ -97,7 +98,44 @@ task zeekr-local/run.js -- zeekr_2130_all.js
 
 可以在面板「定时任务」里单独修改时间。当前使用本地目录映射，无需额外添加 Git 仓库订阅；再次添加同一项目的六条订阅任务会导致重复执行。
 
-## 5. 更换 Token
+## 5. 随机启动延迟（已启用，可配置）
+
+直接使用当前青龙版本内置的随机延迟功能。六条 cron 保持原来的触发时间，每次定时执行时重新随机选择 1～30 秒，等待结束后才启动脚本；主任务和补领都生效。
+
+配置保存在已映射的 Windows 文件中：
+
+```powershell
+Set-Location E:\dev\github\zeekr-checkin
+notepad .\docker\qinglong\data\config\config.sh
+```
+
+也可以进入面板「配置文件」编辑 `config.sh`。当前三个相关配置为：
+
+```bash
+RandomDelay="30"
+RandomDelayFileExtensions="js"
+RandomDelayIgnoredMinutes=""
+```
+
+- `RandomDelay`：随机等待秒数的上限。`30` 表示每次随机等待 1～30 秒；改成 `60` 则是 1～60 秒；设为 `0` 或空字符串可关闭。
+- `RandomDelayFileExtensions`：应用的脚本类型。设为 `js`，匹配这六条任务共同使用的 `run.js` 入口。以后新增的其他 JS 定时任务也会受此设置影响。
+- `RandomDelayIgnoredMinutes`：在哪些分钟跳过随机延迟。保持空字符串，确保 21:30 那场也会随机等待；填写 `0 30` 会使整点、半点的任务准点执行。
+
+修改**已有配置行**即可，不要重复追加同名配置。保存后下次执行生效，**无需重启容器**；配置会随 `docker/qinglong/data` 一起持久化和备份。
+
+面板「运行」、本项目 `manage.py run` 和 `task ... now` 属于手动立即运行，按青龙原有行为会跳过随机等待。直接用 `node` 运行脚本也不经过青龙的延迟功能。
+
+验证定时执行所用的延迟路径，可以运行下面的命令。它只检查本地 Token 文件，不会向极氪发起签到或步数请求：
+
+```powershell
+docker exec -e real_time=false -e no_delay=false -e ID=0 qinglong task zeekr-local/run.js -- --check
+```
+
+日志会先显示「任务随机延迟 N 秒」，等待后再显示配置检查结果。本次实测随机到 **6 秒**，等待后检查通过。`ID=0` 用于避免覆盖六条业务任务的日志关联。
+
+随机延迟只用于错开请求时间，不能保证避免平台风控。
+
+## 6. 更换 Token
 
 只编辑原文件：
 
@@ -115,7 +153,7 @@ docker exec qinglong node /ql/data/scripts/zeekr-local/run.js --check
 
 文件保存后下一次任务即生效，**无需重建或重启容器**。检查通过仅说明文件格式和 JWT 声明到期时间可用，服务器是否接受以实际任务日志为准。
 
-## 6. 查看状态、手动运行和日志
+## 7. 查看状态、手动运行和日志
 
 查看容器和六条任务：
 
@@ -148,7 +186,7 @@ docker compose logs --tail 80 qinglong
 
 目前没有配置额外的手机推送渠道，业务结果以任务日志为准。
 
-## 7. 重启、停止、重建与备份
+## 8. 重启、停止、重建与备份
 
 ```powershell
 # 重启
@@ -183,7 +221,7 @@ finally {
 
 备份包含你的登录密码和 Token，请保存在本人可控的位置。恢复时停止容器，将备份的 `data` 放回 `docker\qinglong\data`，Token 放回原路径，再运行 `docker compose up -d`。项目源码及 `docker-compose.yml` 也需要保留。
 
-## 8. 参考
+## 9. 参考
 
 - [本项目常规青龙安装说明](../configs/qinglong.md)：面向仓库订阅部署，与本机文件映射方案不同。
 - [青龙官方项目](https://github.com/whyour/qinglong)：官方容器示例同样将运行数据挂载到 `/ql/data`。
